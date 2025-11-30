@@ -2,9 +2,14 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
-const multer = require("multer");
-const nodemailer = require("nodemailer");
+ // no longer used for OTP, can remove later
 const { recruitGET, recruitPOST, recruitPUT } = require("./recruit");
+
+// Twilio SDK
+const twilio = require("twilio")(
+    process.env.TWILIO_ACCOUNT_SID,
+    process.env.TWILIO_AUTH_TOKEN
+);
 
 const app = express();
 app.use(cors());
@@ -12,31 +17,19 @@ app.use(express.json());
 
 console.log("------------------------------------------------");
 console.log("BOT RESTARTED");
-console.log("MAILTRAP USER:", process.env.MAILTRAP_USER ? "Loaded" : "Missing");
+console.log("Twilio SID:", process.env.TWILIO_ACCOUNT_SID ? "Loaded" : "Missing");
 console.log("------------------------------------------------");
 
 const sessionStore = new Map();
 const otpStore = new Map();
 
-// MAILER SETUP (MAILTRAP)
-const transporter = nodemailer.createTransport({
-    host: process.env.MAILTRAP_HOST,
-    port: Number(process.env.MAILTRAP_PORT) || 587,
-    secure: false,
-    auth: {
-        user: process.env.MAILTRAP_USER,
-        pass: process.env.MAILTRAP_PASS
-    }
-});
-
-async function sendOtpEmail(toEmail, otp) {
-    const mailOptions = {
-        from: '"HR Assistant" <no-reply@hrbot.test>',
-        to: toEmail,
-        subject: "Your Verification Code",
-        text: `Your OTP is: ${otp}\n\nPlease enter this code in the chat.`
-    };
-    return transporter.sendMail(mailOptions);
+// SEND OTP VIA TWILIO SMS
+async function sendOtpSms(toPhone, otp) {
+    return twilio.messages.create({
+        body: `Your verification code is: ${otp}`,
+        from: process.env.TWILIO_FROM_NUMBER,
+        to: toPhone
+    });
 }
 
 function isValidEmail(email) {
@@ -150,7 +143,6 @@ app.post("/zobot", async (req, res) => {
 
         // SECTION B: CONTEXT FLOWS
 
-        // B1. CHECK STATUS
         if (contextId === "check_status") {
             const email = cleanText(message);
             try {
@@ -183,7 +175,6 @@ app.post("/zobot", async (req, res) => {
             return res.json(response);
         }
 
-        // B2. SEARCH SKILL
         if (contextId === "search_skill") {
             const skill = message.toLowerCase();
             const data = await recruitGET("/JobOpenings");
@@ -212,7 +203,6 @@ app.post("/zobot", async (req, res) => {
             return res.json(response);
         }
 
-        // B3. VIEW DETAILS
         if (message.startsWith("Details: ") || message.startsWith("details_id::")) {
             const jobId = message.includes("::")
                 ? message.split("::")[1]
@@ -235,7 +225,6 @@ app.post("/zobot", async (req, res) => {
 
         // SECTION C: APPLY FLOW
 
-        // Step 1: Start
         if (message.startsWith("Apply: ") || message.startsWith("apply_id::")) {
             const jobId = message.includes("::")
                 ? message.split("::")[1]
@@ -247,7 +236,6 @@ app.post("/zobot", async (req, res) => {
             return res.json(response);
         }
 
-        // Step 2: Name -> Email
         if (contextId === "collect_name") {
             contextParams.name = cleanText(message);
             response.replies = ["Thanks. What is your Email?"];
@@ -257,7 +245,7 @@ app.post("/zobot", async (req, res) => {
             return res.json(response);
         }
 
-        // Step 3: Email -> OTP
+        // Step 3: Email -> ask for phone, send OTP via SMS
         if (contextId === "collect_email") {
             contextParams.email = cleanText(message);
 
@@ -269,52 +257,64 @@ app.post("/zobot", async (req, res) => {
                 return res.json(response);
             }
 
-            const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
-            otpStore.set(contextParams.email, otp);
-
-            console.log(`Sending OTP to ${contextParams.email} (background)...`);
-            sendOtpEmail(contextParams.email, otp).catch(err => {
-                console.error("Background Email Failed:", err.message);
-            });
-
             response.replies = [
-                `I am sending a verification code to ${contextParams.email} now.`,
-                "Please enter the 6-digit OTP code below."
+                "Email saved. Please enter your Mobile Number (with country code, e.g., +919876543210)."
             ];
-
-            const nextState = { id: "verify_otp", params: contextParams };
+            const nextState = { id: "collect_phone_for_otp", params: contextParams };
             response.context = nextState;
             sessionStore.set(userId, nextState);
-
             return res.json(response);
         }
 
-        // Step 4: Verify OTP -> Phone
-        if (contextId === "verify_otp") {
+        // Step 3b: collect phone and send SMS OTP
+        if (contextId === "collect_phone_for_otp") {
+            contextParams.phone = cleanText(message);
+
+            const otp = Math.floor(100000 + Math.random() * 900000).toString();
+            otpStore.set(contextParams.phone, otp);
+
+            console.log(`Sending OTP SMS to ${contextParams.phone} (background)...`);
+            sendOtpSms(contextParams.phone, otp).catch(err => {
+                console.error("SMS send failed:", err.message);
+            });
+
+            response.replies = [
+                "A verification code has been sent to your mobile number.",
+                "Please enter the 6-digit OTP."
+            ];
+
+            const nextState = { id: "verify_otp_sms", params: contextParams };
+            response.context = nextState;
+            sessionStore.set(userId, nextState);
+            return res.json(response);
+        }
+
+        // Step 4: Verify SMS OTP -> final phone confirm (we already have phone)
+        if (contextId === "verify_otp_sms") {
             const enteredOtp = cleanText(message);
-            const storedOtp = otpStore.get(contextParams.email);
+            const storedOtp = otpStore.get(contextParams.phone);
 
             if (storedOtp && enteredOtp === storedOtp) {
-                otpStore.delete(contextParams.email);
+                otpStore.delete(contextParams.phone);
                 response.replies = [
-                    "Email verified. Finally, please enter your Mobile Number."
+                    "Mobile number verified. Proceeding with your application."
                 ];
                 const nextState = { id: "collect_phone", params: contextParams };
                 response.context = nextState;
                 sessionStore.set(userId, nextState);
             } else {
                 response.replies = [
-                    "Incorrect OTP. Please check your email and try again."
+                    "Incorrect OTP. Please check the code sent to your phone and try again."
                 ];
-                response.context = { id: "verify_otp", params: contextParams };
+                response.context = { id: "verify_otp_sms", params: contextParams };
             }
             return res.json(response);
         }
 
-        // Step 5: Phone -> Submit
+        // Step 5: Phone -> Submit (phone already in contextParams.phone)
         if (contextId === "collect_phone") {
-            contextParams.phone = cleanText(message);
+            // Optionally allow user to confirm or edit phone here
+            // contextParams.phone = cleanText(message);
 
             try {
                 const nameParts = contextParams.name.split(" ");
@@ -343,7 +343,7 @@ app.post("/zobot", async (req, res) => {
                             ids: [cId],
                             jobids: [jobId],
                             status: "Applied",
-                            comments: "Verified via OTP"
+                            comments: "Verified via SMS OTP"
                         }
                     ]
                 };
@@ -362,7 +362,6 @@ app.post("/zobot", async (req, res) => {
             return res.json(response);
         }
 
-        // Fallback
         console.log("Fallback:", message);
         response.replies = ["I did not quite catch that. Please select an option:"];
         response.suggestions = ["Apply for Jobs", "Find a Job", "My Jobs"];
