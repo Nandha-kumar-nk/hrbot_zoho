@@ -20,8 +20,11 @@ const sessionStore = new Map();
 const otpStore = new Map();
 
 // ================== MAILER SETUP ==================
+// ================== MAILER SETUP ==================
 const transporter = nodemailer.createTransport({
-    service: "gmail",
+    host: "smtp.gmail.com",  // Explicitly set Gmail Host
+    port: 465,               // Use Secure Port 465 (Allowed on Render)
+    secure: true,            // Must be true for port 465
     auth: {
         user: process.env.OTP_EMAIL_USER,
         pass: process.env.OTP_EMAIL_PASS
