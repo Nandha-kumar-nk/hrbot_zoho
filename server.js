@@ -21,14 +21,20 @@ const otpStore = new Map();
 
 // ================== MAILER SETUP ==================
 // ================== MAILER SETUP ==================
+// ================== MAILER SETUP (UPDATED FOR PORT 587) ==================
 const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",  // Explicitly set Gmail Host
-    port: 465,               // Use Secure Port 465 (Allowed on Render)
-    secure: true,            // Must be true for port 465
+    host: "smtp.gmail.com",
+    port: 587,              // Switch to Standard Port
+    secure: false,          // False for 587, True for 465
     auth: {
         user: process.env.OTP_EMAIL_USER,
         pass: process.env.OTP_EMAIL_PASS
-    }
+    },
+    tls: {
+        rejectUnauthorized: false // Helps avoid some strict firewall issues
+    },
+    logger: true, // Log the connection details
+    debug: true   // Show debug output
 });
 
 async function sendOtpEmail(toEmail, otp) {
