@@ -22,19 +22,26 @@ const otpStore = new Map();
 // ================== MAILER SETUP ==================
 // ================== MAILER SETUP ==================
 // ================== MAILER SETUP (UPDATED FOR PORT 587) ==================
+// ================== MAILER SETUP (FINAL FIX) ==================
 const transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
-    port: 587,              // Switch to Standard Port
-    secure: false,          // False for 587, True for 465
+    port: 465,              // Use Secure Port
+    secure: true,           // True for 465
     auth: {
         user: process.env.OTP_EMAIL_USER,
         pass: process.env.OTP_EMAIL_PASS
     },
+    // ----------------------------------------
+    // CRITICAL SETTINGS FOR RENDER
+    // ----------------------------------------
+    family: 4,              // <--- Force IPv4 (Fixes the hanging issue)
+    connectionTimeout: 10000, // Wait max 10 seconds for connection
+    greetingTimeout: 5000,    // Wait max 5 seconds for greeting
     tls: {
-        rejectUnauthorized: false // Helps avoid some strict firewall issues
+        rejectUnauthorized: false // Allow connection even if certs act up
     },
-    logger: true, // Log the connection details
-    debug: true   // Show debug output
+    debug: true,            // Keep logs on
+    logger: true
 });
 
 async function sendOtpEmail(toEmail, otp) {
