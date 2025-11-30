@@ -12,8 +12,8 @@ app.use(express.json());
 
 // ================== DEBUGGING ==================
 console.log("------------------------------------------------");
-console.log("🤖 BOT RESTARTED: Fast Response Mode");
-console.log("📧 Email User:", process.env.OTP_EMAIL_USER ? "Loaded ✅" : "Missing ❌");
+console.log("BOT RESTARTED: Fast Response Mode");
+console.log("Email User:", process.env.OTP_EMAIL_USER ? "Loaded " : "Missing ");
 console.log("------------------------------------------------");
 
 const sessionStore = new Map();
@@ -86,7 +86,7 @@ app.post("/zobot", async (req, res) => {
             }
         }
 
-        console.log(`📩 IN: "${message}" | CTX: "${contextId}"`);
+        console.log(` IN: "${message}" | CTX: "${contextId}"`);
 
         let response = {
             action: "reply",
@@ -270,13 +270,13 @@ app.post("/zobot", async (req, res) => {
             // 2. Trigger Email in BACKGROUND (Do NOT await)
             console.log(`Sending OTP to ${contextParams.email} (Background)...`);
             sendOtpEmail(contextParams.email, otp).catch(err => {
-                console.error("❌ Background Email Failed:", err.message);
+                console.error(" Background Email Failed:", err.message);
             });
 
             // 3. Reply to user INSTANTLY (Prevents Timeout)
             response.replies = [
-                `✅ I am sending a verification code to **${contextParams.email}** now.`,
-                "👉 **Please enter the 6-digit OTP code below:**"
+                ` I am sending a verification code to **${contextParams.email}** now.`,
+                " **Please enter the 6-digit OTP code below:**"
             ];
             
             const nextState = { id: "verify_otp", params: contextParams };
@@ -293,12 +293,12 @@ app.post("/zobot", async (req, res) => {
 
             if (storedOtp && enteredOtp === storedOtp) {
                 otpStore.delete(contextParams.email);
-                response.replies = ["✅ Email verified! Finally, please enter your **Mobile Number**."];
+                response.replies = [" Email verified! Finally, please enter your **Mobile Number**."];
                 const nextState = { id: "collect_phone", params: contextParams };
                 response.context = nextState;
                 sessionStore.set(userId, nextState);
             } else {
-                response.replies = ["❌ Incorrect OTP. Please check your email and try again."];
+                response.replies = [" Incorrect OTP. Please check your email and try again."];
                 response.context = { id: "verify_otp", params: contextParams }; 
             }
             return res.json(response);
@@ -336,20 +336,20 @@ app.post("/zobot", async (req, res) => {
                 };
                 await recruitPUT("/Candidates/actions/associate", assocPayload);
 
-                response.replies = ["🎉 Application Successful! Your profile has been created."];
+                response.replies = [" Application Successful! Your profile has been created."];
                 response.suggestions = ["My Jobs", "Find a Job"];
                 sessionStore.delete(userId);
 
             } catch(e) {
                 console.error("Zoho Error:", e);
-                response.replies = ["⚠️ Saved your details, but failed to link the job."];
+                response.replies = ["Saved your details, but failed to link the job."];
                 sessionStore.delete(userId);
             }
             return res.json(response);
         }
 
         // Fallback
-        console.log("⚠️ Fallback:", message);
+        console.log(" Fallback:", message);
         response.replies = ["I didn't quite catch that. Please select an option:"];
         response.suggestions = ["Apply for Jobs", "Find a Job", "My Jobs"];
         return res.json(response);
